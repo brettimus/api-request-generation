@@ -8,6 +8,8 @@
     "db:seed": "tsx seed.ts"
   },
   "dependencies": {
+    "@fiberplane/hono": "^0.3.0",
+    "@langchain/core": "^0.2.18",
     "@neondatabase/serverless": "^0.9.3",
     "drizzle-orm": "^0.31.2",
     "hono": "^4.5.0"
