@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+// import { neon } from '@neondatabase/serverless';
+// import { drizzle } from 'drizzle-orm/neon-http';
 import { createHonoMiddleware } from '@fiberplane/hono';
-import { users } from './db/schema';
 import { makeRequestToolHermes } from './tools';
 import { getSystemPrompt } from './prompts';
 
@@ -23,49 +22,42 @@ app.use(createHonoMiddleware(app));
 app.get('/', async (c) => {
   const inferenceResult = await runInference(c.env.AI, "/users/:id")
 
-  // We are not using a stream, but just in case...
+  // We are not using streaming outputs, but just in case, handle the stream here
   if (inferenceResult instanceof ReadableStream) {
     return c.json({
       message: "Unexpected inference result (stream)",
     }, 500)
   }
-  // We are theoretically enforcing a tool call... hopefully this will not happen
+
+  // We are theoretically enforcing a tool call, so this should not happen
   if (inferenceResult.response != null) {
     return c.json({
       message: "Unexpected inference result (text)",
     }, 500)
   }
 
+  // Parse the tool call
   const makeRequestCall = inferenceResult.tool_calls?.[0];
-  // HACK - Type coercion
-  const toolArgs = makeRequestCall?.arguments;
+  const requestDescriptor = makeRequestCall?.arguments;
 
-  if (!isObjectGuard(toolArgs)) {
+  // TODO - Validate the request descriptor against the JSON Schema from the tool definition
+  if (!isObjectGuard(requestDescriptor)) {
     return c.json({
-      message: "Invalid tool args"
+      message: "Invalid request descriptor"
     }, 500)
   }
 
-  console.log("toolArgs", JSON.stringify(toolArgs, null, 2));
-  return c.json(toolArgs)
+  console.log("requestDescriptor", JSON.stringify(requestDescriptor, null, 2));
+
+  return c.json(requestDescriptor)
 })
-
-const isObjectGuard = (value: unknown): value is object => typeof value === 'object' && value !== null;
-
-// app.get('/api/users', async (c) => {
-//   const sql = neon(c.env.DATABASE_URL)
-//   const db = drizzle(sql);
-
-//   return c.json({
-//     users: await db.select().from(users)
-//   })
-// })
 
 export default app
 
 export async function runInference(client: Ai, userPrompt: string) {
   const result = await client.run(
-    // @ts-ignore - This model exists in the Worker types, i don't know why it's causing an error here
+    // @ts-ignore - This model exists in the Worker types as far as I can tell
+    //              I don't know why it's causing a typescript error here :(
     "@hf/nousresearch/hermes-2-pro-mistral-7b",
     {
       tools: [makeRequestToolHermes],
@@ -87,9 +79,12 @@ export async function runInference(client: Ai, userPrompt: string) {
       ],
       temperature: 0.12,
 
+      // NOTE - The request will fail if you don't put the prompt here
       prompt: userPrompt,
     })
 
   // HACK - Need to coerce this to a AiTextGenerationOutput
   return result as AiTextGenerationOutput;
 }
+
+const isObjectGuard = (value: unknown): value is object => typeof value === 'object' && value !== null;
